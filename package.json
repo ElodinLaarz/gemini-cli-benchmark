@@ -10,7 +10,8 @@
     "profile:wall": "bash run-profile.sh --wall-only",
     "report": "node src/generate-report.js",
     "serve": "node src/generate-report.js --serve",
-    "clean": "rm -rf profiles/* output/*"
+    "clean": "rm -rf profiles/* output/*",
+    "live": "node src/live-server.js"
   },
   "dependencies": {
     "d3-flame-graph": "^4.1.3"

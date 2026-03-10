@@ -25,6 +25,7 @@ set -euo pipefail
 
 # ─── Defaults ────────────────────────────────────────────────────────────────
 RUNS=5
+START_RUN=1
 CPU_ONLY=false
 MEM_ONLY=false
 WALL_ONLY=false
@@ -41,6 +42,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --runs)       RUNS="$2";        shift 2 ;;
+    --start-run)  START_RUN="$2";   shift 2 ;;
     --cpu-only)   CPU_ONLY=true;    shift ;;
     --mem-only)   MEM_ONLY=true;    shift ;;
     --wall-only)  WALL_ONLY=true;   shift ;;
@@ -454,7 +456,8 @@ echo ""
 echo "Starting $RUNS profiling run(s)..."
 echo ""
 
-for i in $(seq 1 "$RUNS"); do
+END_RUN=$(( START_RUN + RUNS - 1 ))
+for i in $(seq "$START_RUN" "$END_RUN"); do
   run_iteration "$i" "$RUN_CPU" "$RUN_MEM" "$RUN_WALL"
 done
 
