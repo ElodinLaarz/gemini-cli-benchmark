@@ -1,0 +1,18 @@
+{
+  "name": "gemini-cli-startup-testbed",
+  "version": "1.0.0",
+  "description": "Testbed for measuring Gemini CLI startup latency with interactive flame graphs",
+  "type": "module",
+  "scripts": {
+    "profile": "bash run-profile.sh",
+    "profile:cpu": "bash run-profile.sh --cpu-only",
+    "profile:mem": "bash run-profile.sh --mem-only",
+    "profile:wall": "bash run-profile.sh --wall-only",
+    "report": "node src/generate-report.js",
+    "serve": "node src/generate-report.js --serve",
+    "clean": "rm -rf profiles/* output/*"
+  },
+  "dependencies": {
+    "d3-flame-graph": "^4.1.3"
+  }
+}

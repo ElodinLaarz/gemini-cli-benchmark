@@ -1,0 +1,20 @@
+# AI assistant context files
+CLAUDE.md
+GEMINI.md
+.claude/
+.gemini/
+
+# Profile data and output
+profiles/
+output/
+
+# Injected hook files (generated at runtime)
+_require_hook.cjs
+_memory_hook.cjs
+
+# Node
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
