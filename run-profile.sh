@@ -76,8 +76,10 @@ GEMINI_ENTRY=""
 for candidate in \
   "$GEMINI_DIR/../lib/node_modules/@google/gemini-cli/build/cli.js" \
   "$GEMINI_DIR/../lib/node_modules/@google/gemini-cli/dist/cli.js" \
+  "$GEMINI_DIR/../lib/node_modules/@google/gemini-cli/dist/index.js" \
   "$GEMINI_DIR/../lib/node_modules/@google/gemini-cli/src/cli.js" \
   "$GEMINI_DIR/cli.js" \
+  "$GEMINI_DIR/index.js" \
   "$GEMINI_REAL"; do
   if [[ -f "$candidate" ]]; then
     GEMINI_ENTRY="$(readlink -f "$candidate" 2>/dev/null || realpath "$candidate" 2>/dev/null || echo "$candidate")"
@@ -358,7 +360,7 @@ run_iteration() {
   # Launch gemini with profiling
   # We use `script` to capture PTY output (for prompt detection) and
   # `timeout` to kill it after the prompt is found or timeout elapses.
-  if [[ -n "$GEMINI_ENTRY" && "$GEMINI_ENTRY" != "$GEMINI_PATH" ]]; then
+  if [[ -n "$GEMINI_ENTRY" && ("$GEMINI_ENTRY" != "$GEMINI_PATH" || "$GEMINI_ENTRY" == *.js) ]]; then
     # Direct node invocation for full profiling control
     local CMD="env $ENV_VARS NODE_OPTIONS=\"$NODE_FLAGS $PRELOAD_FLAGS\" node $GEMINI_ENTRY"
   else
@@ -369,7 +371,8 @@ run_iteration() {
   echo "  [cmd] $CMD"
 
   # Launch in background, capture output
-  script -q -c "timeout ${TIMEOUT}s $CMD" "$LOGFILE" &>/dev/null &
+  # -f/--flush ensures PTY output is written to LOGFILE in real-time (not buffered until exit)
+  script -q -f -c "timeout ${TIMEOUT}s $CMD" "$LOGFILE" &>/dev/null &
   local PID=$!
 
   # Monitor for prompt-ready

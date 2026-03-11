@@ -15,6 +15,10 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
 const PROFILES_DIR = join(ROOT, 'profiles');
 
+// Path to locally built Gemini CLI (takes precedence over system install when it exists).
+// Set GEMINI_LOCAL_PATH env var or --local CLI flag to override.
+const LOCAL_CLI_PATH = join(ROOT, '../gemini-cli/packages/cli/dist/index.js');
+
 // ─── Profile parsers (mirrored from generate-report.js) ──────────────────────
 
 function findFiles(dir, pattern) {
@@ -168,13 +172,17 @@ function broadcast(event, data) {
 
 async function runOneIteration(startRun) {
   return new Promise((resolve, reject) => {
-    const proc = spawn('bash', [
+    const args = [
       join(ROOT, 'run-profile.sh'),
       '--runs', '1',
       '--start-run', String(startRun),
       '--no-report',
-      '--timeout', '60',
-    ], { cwd: ROOT });
+      '--timeout', '120',
+    ];
+    // Use locally built CLI if available, falling back to system install
+    const geminiPath = process.env['GEMINI_LOCAL_PATH'] || (existsSync(LOCAL_CLI_PATH) ? LOCAL_CLI_PATH : null);
+    if (geminiPath) args.push('--gemini-path', geminiPath);
+    const proc = spawn('bash', args, { cwd: ROOT });
     proc.stdout?.on('data', (chunk) => process.stdout.write(chunk));
     proc.stderr?.on('data', (chunk) => process.stderr.write(chunk));
     proc.on('close', (code) => resolve(code));
