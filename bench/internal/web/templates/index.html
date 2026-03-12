@@ -1,0 +1,206 @@
+{{define "head"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TTI Benchmarker</title>
+<script src="https://unpkg.com/htmx.org@1.9.12"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f0f0f; color: #e0e0e0; padding: 2rem; max-width: 900px; margin: 0 auto; }
+h1 { font-size: 1.6rem; font-weight: 600; margin-bottom: 1.5rem; color: #fff; }
+h2 { font-size: 1.1rem; font-weight: 500; margin-bottom: 1rem; color: #ccc; }
+.card { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem; }
+label { display: block; font-size: 0.85rem; color: #aaa; margin-bottom: 0.3rem; margin-top: 0.8rem; }
+label:first-child { margin-top: 0; }
+input, textarea { width: 100%; background: #111; border: 1px solid #333; border-radius: 4px; padding: 0.5rem 0.75rem; color: #e0e0e0; font-size: 0.9rem; font-family: monospace; }
+input:focus, textarea:focus { outline: none; border-color: #555; }
+textarea { resize: vertical; min-height: 80px; }
+.row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; }
+button { margin-top: 1rem; padding: 0.5rem 1.5rem; background: #2563eb; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9rem; font-weight: 500; }
+button:hover { background: #1d4ed8; }
+button.danger { background: #dc2626; }
+button.danger:hover { background: #b91c1c; }
+.error { color: #f87171; font-size: 0.85rem; margin-top: 0.5rem; }
+table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+th { text-align: left; padding: 0.5rem 0.75rem; background: #222; color: #aaa; font-weight: 500; border-bottom: 1px solid #333; }
+td { padding: 0.5rem 0.75rem; border-bottom: 1px solid #1e1e1e; }
+.badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 3px; font-size: 0.78rem; font-weight: 500; }
+.badge-pending { background: #333; color: #aaa; }
+.badge-running { background: #1e3a5f; color: #60a5fa; }
+.badge-done { background: #14532d; color: #4ade80; }
+.badge-error { background: #450a0a; color: #f87171; }
+.bar-chart { display: flex; align-items: flex-end; gap: 6px; height: 130px; padding: 0.5rem 0; }
+.bar-wrap { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.bar { width: 28px; background: #2563eb; border-radius: 2px 2px 0 0; min-height: 2px; transition: background 0.2s; }
+.bar:hover { background: #3b82f6; }
+.bar-label { font-size: 0.7rem; color: #888; }
+.bar-val { font-size: 0.68rem; color: #60a5fa; }
+.timed-out { background: #dc2626 !important; }
+.stats-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 0.5rem; margin-top: 1rem; }
+.stat-box { background: #111; border: 1px solid #2a2a2a; border-radius: 4px; padding: 0.5rem; text-align: center; }
+.stat-label { font-size: 0.7rem; color: #888; }
+.stat-val { font-size: 1.1rem; font-weight: 600; color: #e0e0e0; }
+.job-link { color: #60a5fa; text-decoration: none; }
+.job-link:hover { text-decoration: underline; }
+.back { color: #888; font-size: 0.85rem; display: inline-block; margin-bottom: 1rem; text-decoration: none; }
+.back:hover { color: #ccc; }
+.htmx-indicator { opacity: 0; transition: opacity 200ms; }
+.htmx-request .htmx-indicator { opacity: 1; }
+</style>
+</head>
+{{end}}
+
+{{define "list"}}
+{{template "head" .}}
+<body>
+<h1>TTI Benchmarker</h1>
+<div class="card" id="form-area">
+  {{template "form" .}}
+</div>
+<div class="card">
+  <h2>Recent Jobs</h2>
+  {{if .Jobs}}
+  <table>
+    <thead><tr><th>ID</th><th>Binary</th><th>Runs</th><th>Status</th><th>Avg TTI</th><th></th></tr></thead>
+    <tbody>
+    {{range .Jobs}}
+    <tr>
+      <td><a class="job-link" href="/benchmark/{{.ID}}">{{.ID}}</a></td>
+      <td style="font-family:monospace">{{.Config.Binary}}</td>
+      <td>{{len .Runs}}</td>
+      <td><span class="badge badge-{{.Status}}">{{.Status}}</span></td>
+      <td>{{if .Stats}}{{.Stats.AvgMs}}ms{{else}}—{{end}}</td>
+      <td>
+        <button class="danger" style="margin:0;padding:0.2rem 0.6rem;font-size:0.8rem"
+          hx-delete="/benchmark/{{.ID}}"
+          hx-confirm="Delete this job?"
+          hx-target="closest tr"
+          hx-swap="outerHTML">&#x2715;</button>
+      </td>
+    </tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p style="color:#666;font-size:0.9rem">No jobs yet. Run a benchmark above.</p>
+  {{end}}
+</div>
+</body>
+</html>
+{{end}}
+
+{{define "form"}}
+<h2>New Benchmark</h2>
+<form hx-post="/benchmark" hx-target="#form-area" hx-swap="outerHTML">
+  <label>Binary path</label>
+  <input type="text" name="binary" placeholder="/usr/local/bin/gemini" value="{{.FormBinary}}" required>
+  <label>Arguments (space-separated)</label>
+  <input type="text" name="args" placeholder="--no-color" value="{{.FormArgs}}">
+  <label>Prompt-ready patterns (one per line, regex)</label>
+  <textarea name="patterns">{{.FormPatterns}}</textarea>
+  {{if .FormError}}<div class="error">{{.FormError}}</div>{{end}}
+  <div class="row">
+    <div>
+      <label>Runs</label>
+      <input type="number" name="runs" value="{{.FormRuns}}" min="1" max="50">
+    </div>
+    <div>
+      <label>Timeout (s)</label>
+      <input type="number" name="timeout" value="{{.FormTimeout}}" min="5" max="300">
+    </div>
+    <div>
+      <label>Cooldown (ms)</label>
+      <input type="number" name="cooldown" value="{{.FormCooldown}}" min="0">
+    </div>
+  </div>
+  <button type="submit">Run Benchmark</button>
+</form>
+{{end}}
+
+{{define "detail"}}
+{{template "head" .}}
+<body>
+<a class="back" href="/">&#x2190; All jobs</a>
+<h1>Job: {{.Job.ID}}</h1>
+<div class="card">
+  <table>
+    <tr><th style="width:120px">Binary</th><td style="font-family:monospace">{{.Job.Config.Binary}}</td></tr>
+    <tr><th>Args</th><td style="font-family:monospace">{{range .Job.Config.Args}}{{.}} {{end}}</td></tr>
+    <tr><th>Status</th><td><span class="badge badge-{{.Job.Status}}">{{.Job.Status}}</span></td></tr>
+    <tr><th>Started</th><td>{{.Job.StartedAt.Format "15:04:05"}}</td></tr>
+    {{if .Job.FinishedAt}}<tr><th>Finished</th><td>{{.Job.FinishedAt.Format "15:04:05"}}</td></tr>{{end}}
+  </table>
+</div>
+<div
+  {{if eq .Job.Status "running"}}
+  hx-get="/benchmark/{{.Job.ID}}/results"
+  hx-trigger="every 500ms"
+  hx-swap="outerHTML"
+  {{end}}
+  id="results-{{.Job.ID}}">
+  {{template "results_inner" .}}
+</div>
+</body>
+</html>
+{{end}}
+
+{{define "results_partial"}}
+<div
+  {{if eq .Job.Status "running"}}
+  hx-get="/benchmark/{{.Job.ID}}/results"
+  hx-trigger="every 500ms"
+  hx-swap="outerHTML"
+  {{end}}
+  id="results-{{.Job.ID}}">
+  {{template "results_inner" .}}
+</div>
+{{end}}
+
+{{define "results_inner"}}
+<div class="card">
+  <h2>Run Results</h2>
+  {{if .BarData}}
+  <div class="bar-chart">
+    {{range .BarData}}
+    <div class="bar-wrap">
+      <div class="bar-val">{{if .Val}}{{deref .Val}}ms{{else}}&#x2014;{{end}}</div>
+      <div class="bar {{if .TimedOut}}timed-out{{end}}" style="height:{{.Height}}px" title="Run {{.Idx}}: {{if .Val}}{{deref .Val}}ms{{else}}timed out{{end}}"></div>
+      <div class="bar-label">#{{.Idx}}</div>
+    </div>
+    {{end}}
+  </div>
+  {{end}}
+  <table style="margin-top:1rem">
+    <thead><tr><th>#</th><th>TTI</th><th>Status</th></tr></thead>
+    <tbody>
+    {{range .Job.Runs}}
+    <tr>
+      <td>{{.RunIndex}}</td>
+      <td>{{if .TTIMs}}{{deref .TTIMs}}ms{{else}}&#x2014;{{end}}</td>
+      <td>
+        {{if .Error}}<span class="badge badge-error">error: {{.Error}}</span>
+        {{else if .TimedOut}}<span class="badge badge-error">timed out</span>
+        {{else if .TTIMs}}<span class="badge badge-done">done</span>
+        {{else}}<span class="badge badge-pending">pending</span>{{end}}
+      </td>
+    </tr>
+    {{end}}
+    </tbody>
+  </table>
+</div>
+{{if .Job.Stats}}
+<div class="card">
+  <h2>Statistics</h2>
+  <div class="stats-grid">
+    <div class="stat-box"><div class="stat-label">N</div><div class="stat-val">{{.Job.Stats.N}}</div></div>
+    <div class="stat-box"><div class="stat-label">Min</div><div class="stat-val">{{.Job.Stats.MinMs}}ms</div></div>
+    <div class="stat-box"><div class="stat-label">Max</div><div class="stat-val">{{.Job.Stats.MaxMs}}ms</div></div>
+    <div class="stat-box"><div class="stat-label">Avg</div><div class="stat-val">{{.Job.Stats.AvgMs}}ms</div></div>
+    <div class="stat-box"><div class="stat-label">Median</div><div class="stat-val">{{.Job.Stats.MedianMs}}ms</div></div>
+    <div class="stat-box"><div class="stat-label">P95</div><div class="stat-val">{{.Job.Stats.P95Ms}}ms</div></div>
+  </div>
+</div>
+{{end}}
+{{end}}
