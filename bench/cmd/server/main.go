@@ -17,9 +17,10 @@ import (
 
 func main() {
 	addr := flag.String("addr", ":8080", "listen address")
+	dataDir := flag.String("data", "./data", "data directory for persistent job storage")
 	flag.Parse()
 
-	store := benchmark.NewStore()
+	store := benchmark.NewStore(benchmark.StoreConfig{DataDir: *dataDir})
 	runner := benchmark.NewRunner(store)
 
 	handler, err := web.NewHandler(store, runner)
