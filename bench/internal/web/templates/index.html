@@ -8,13 +8,13 @@
 <script src="https://unpkg.com/htmx.org@1.9.12"></script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f0f0f; color: #e0e0e0; padding: 2rem; max-width: 900px; margin: 0 auto; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f0f0f; color: #e0e0e0; padding: 2rem; max-width: 960px; margin: 0 auto; }
 h1 { font-size: 1.6rem; font-weight: 600; margin-bottom: 1.5rem; color: #fff; }
 h2 { font-size: 1.1rem; font-weight: 500; margin-bottom: 1rem; color: #ccc; }
 .card { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem; }
 label { display: block; font-size: 0.85rem; color: #aaa; margin-bottom: 0.3rem; margin-top: 0.8rem; }
 label:first-child { margin-top: 0; }
-input, textarea { width: 100%; background: #111; border: 1px solid #333; border-radius: 4px; padding: 0.5rem 0.75rem; color: #e0e0e0; font-size: 0.9rem; font-family: monospace; }
+input[type=text], input[type=number], textarea { width: 100%; background: #111; border: 1px solid #333; border-radius: 4px; padding: 0.5rem 0.75rem; color: #e0e0e0; font-size: 0.9rem; font-family: monospace; }
 input:focus, textarea:focus { outline: none; border-color: #555; }
 textarea { resize: vertical; min-height: 80px; }
 .row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; }
@@ -48,6 +48,29 @@ td { padding: 0.5rem 0.75rem; border-bottom: 1px solid #1e1e1e; }
 .back:hover { color: #ccc; }
 .htmx-indicator { opacity: 0; transition: opacity 200ms; }
 .htmx-request .htmx-indicator { opacity: 1; }
+.checkbox-row { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.8rem; }
+.checkbox-row input[type=checkbox] { width: auto; }
+.checkbox-row label { margin: 0; }
+/* Tabs */
+.tabs { display: flex; gap: 0; border-bottom: 1px solid #333; margin-bottom: 1.5rem; }
+.tab-btn { background: none; border: none; border-bottom: 2px solid transparent; color: #888; padding: 0.6rem 1rem; cursor: pointer; font-size: 0.88rem; font-weight: 500; margin-top: 0; border-radius: 0; }
+.tab-btn:hover { color: #ccc; background: #1a1a1a; }
+.tab-btn.active { color: #60a5fa; border-bottom-color: #2563eb; }
+.tab-pane { display: none; }
+.tab-pane.active { display: block; }
+/* Flame graph */
+.flame-container { position: relative; width: 100%; overflow: hidden; }
+canvas.flame-canvas { display: block; width: 100%; cursor: pointer; border-radius: 4px; }
+.flame-tooltip { position: fixed; background: rgba(0,0,0,0.85); border: 1px solid #444; border-radius: 4px; padding: 0.4rem 0.7rem; font-size: 0.8rem; color: #e0e0e0; pointer-events: none; white-space: nowrap; z-index: 100; display: none; }
+.flame-loading { color: #888; font-size: 0.9rem; padding: 2rem; text-align: center; }
+/* Memory timeline */
+canvas.mem-canvas { display: block; width: 100%; border-radius: 4px; }
+.mem-legend { display: flex; gap: 1.5rem; margin-top: 0.5rem; font-size: 0.8rem; }
+.mem-legend-item { display: flex; align-items: center; gap: 0.4rem; }
+.mem-legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+/* System info */
+.sysinfo { font-size: 0.8rem; color: #888; margin-top: 0.5rem; }
+.sysinfo span { color: #aaa; }
 </style>
 </head>
 {{end}}
@@ -115,6 +138,15 @@ td { padding: 0.5rem 0.75rem; border-bottom: 1px solid #1e1e1e; }
       <input type="number" name="cooldown" value="{{.FormCooldown}}" min="0">
     </div>
   </div>
+  <div class="checkbox-row" style="margin-top:1rem">
+    <input type="checkbox" name="use_profile_script" id="use_profile_script" {{if .FormUseProfileScript}}checked{{end}}
+      onchange="document.getElementById('script-path-row').style.display=this.checked?'block':'none'">
+    <label for="use_profile_script" style="color:#ccc">Use Node.js profiling hooks (run-profile.sh)</label>
+  </div>
+  <div id="script-path-row" style="display:{{if .FormUseProfileScript}}block{{else}}none{{end}}">
+    <label>Path to run-profile.sh</label>
+    <input type="text" name="profile_script_path" placeholder="/path/to/run-profile.sh" value="{{.FormProfileScriptPath}}">
+  </div>
   <button type="submit">Run Benchmark</button>
 </form>
 {{end}}
@@ -131,17 +163,301 @@ td { padding: 0.5rem 0.75rem; border-bottom: 1px solid #1e1e1e; }
     <tr><th>Status</th><td><span class="badge badge-{{.Job.Status}}">{{.Job.Status}}</span></td></tr>
     <tr><th>Started</th><td>{{.Job.StartedAt.Format "15:04:05"}}</td></tr>
     {{if .Job.FinishedAt}}<tr><th>Finished</th><td>{{.Job.FinishedAt.Format "15:04:05"}}</td></tr>{{end}}
+    {{if .Job.Config.UseProfileScript}}<tr><th>Mode</th><td><span class="badge badge-running">Node profiling</span></td></tr>{{end}}
   </table>
+  {{if .Job.SystemInfo}}
+  <div class="sysinfo">
+    <span>{{.Job.SystemInfo.OS}}</span> {{.Job.SystemInfo.KernelVersion}} &nbsp;·&nbsp;
+    <span>{{.Job.SystemInfo.CPUModel}}</span> ({{.Job.SystemInfo.CPUCores}} cores) &nbsp;·&nbsp;
+    {{.Job.SystemInfo.TotalRAMMB}}MB RAM &nbsp;·&nbsp;
+    Go <span>{{.Job.SystemInfo.GoVersion}}</span>
+    {{if .Job.SystemInfo.NodeVersion}}&nbsp;·&nbsp; Node <span>{{.Job.SystemInfo.NodeVersion}}</span>{{end}}
+  </div>
+  {{end}}
 </div>
-<div
+
+<div id="results-{{.Job.ID}}"
   {{if eq .Job.Status "running"}}
   hx-get="/benchmark/{{.Job.ID}}/results"
   hx-trigger="every 500ms"
   hx-swap="outerHTML"
-  {{end}}
-  id="results-{{.Job.ID}}">
+  {{end}}>
   {{template "results_inner" .}}
 </div>
+
+{{if .Job.Config.UseProfileScript}}
+<script>
+(function() {
+  // Lazy-load profile data and render flame graphs only when tab is activated
+  const profileLoaded = {};
+  const jobID = "{{.JobID}}";
+
+  function activateTab(tabName) {
+    document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.toggle('active', b.dataset.tab === tabName); });
+    document.querySelectorAll('.tab-pane').forEach(function(p) { p.classList.toggle('active', p.id === 'tab-' + tabName); });
+    if (!profileLoaded[tabName]) {
+      profileLoaded[tabName] = true;
+      loadTab(tabName);
+    }
+  }
+
+  function loadTab(name) {
+    if (name === 'cpu') loadFlameGraph('cpu', '/benchmark/' + jobID + '/profile/cpu', 'flame-cpu');
+    else if (name === 'wall') loadFlameGraph('wall', '/benchmark/' + jobID + '/profile/wall', 'flame-wall');
+    else if (name === 'memory') loadMemory('/benchmark/' + jobID + '/profile/memory');
+  }
+
+  window.activateTab = activateTab;
+
+  // Flame graph renderer
+  function loadFlameGraph(name, url, canvasId) {
+    const el = document.getElementById(canvasId + '-container');
+    if (!el) return;
+    el.innerHTML = '<div class="flame-loading">Loading...</div>';
+    fetch(url).then(function(r) {
+      if (!r.ok) { el.innerHTML = '<div class="flame-loading" style="color:#f87171">No profile data available.</div>'; return; }
+      return r.json();
+    }).then(function(tree) {
+      if (!tree) return;
+      el.innerHTML = '';
+      const canvas = document.createElement('canvas');
+      canvas.className = 'flame-canvas';
+      el.appendChild(canvas);
+      const tip = document.getElementById('flame-tooltip');
+      renderFlameGraph(canvas, tree, tip);
+    }).catch(function(e) {
+      el.innerHTML = '<div class="flame-loading" style="color:#f87171">Error: ' + e.message + '</div>';
+    });
+  }
+
+  function loadMemory(url) {
+    const el = document.getElementById('mem-container');
+    if (!el) return;
+    el.innerHTML = '<div class="flame-loading">Loading...</div>';
+    fetch(url).then(function(r) {
+      if (!r.ok) { el.innerHTML = '<div class="flame-loading" style="color:#f87171">No memory data available.</div>'; return; }
+      return r.json();
+    }).then(function(data) {
+      if (!data) return;
+      el.innerHTML = '';
+      if (data.timeline && data.timeline.length > 0) {
+        const canvas = document.createElement('canvas');
+        canvas.className = 'mem-canvas';
+        canvas.height = 200;
+        el.appendChild(canvas);
+        const legend = document.createElement('div');
+        legend.className = 'mem-legend';
+        legend.innerHTML = '<div class="mem-legend-item"><div class="mem-legend-dot" style="background:#60a5fa"></div>RSS</div>' +
+          '<div class="mem-legend-item"><div class="mem-legend-dot" style="background:#4ade80"></div>Heap Used</div>' +
+          '<div class="mem-legend-item"><div class="mem-legend-dot" style="background:#facc15"></div>Heap Total</div>';
+        el.appendChild(legend);
+        renderMemChart(canvas, data.timeline);
+      }
+      if (data.attribution && data.attribution.length > 0) {
+        const h = document.createElement('h2');
+        h.style.marginTop = '1.5rem';
+        h.textContent = 'Module Memory Attribution';
+        el.appendChild(h);
+        const tbl = document.createElement('table');
+        tbl.innerHTML = '<thead><tr><th>Module</th><th>Delta KB</th></tr></thead>';
+        const tbody = document.createElement('tbody');
+        data.attribution.slice(0, 30).forEach(function(m) {
+          const tr = document.createElement('tr');
+          tr.innerHTML = '<td style="font-family:monospace">' + escHtml(m.module) + '</td><td>' + m.deltaKB + ' KB</td>';
+          tbody.appendChild(tr);
+        });
+        tbl.appendChild(tbody);
+        el.appendChild(tbl);
+      }
+    }).catch(function(e) {
+      el.innerHTML = '<div class="flame-loading" style="color:#f87171">Error: ' + e.message + '</div>';
+    });
+  }
+
+  function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // ─── Flame Graph Canvas Renderer ───────────────────────────────────────────
+  const COLORS = ['#2563eb','#1d4ed8','#1e40af','#1e3a8a','#3b82f6','#60a5fa','#93c5fd'];
+  const ROW_HEIGHT = 20;
+
+  function renderFlameGraph(canvas, root, tooltip) {
+    // Flatten tree into rows
+    const rows = [];
+    let maxDepth = 0;
+
+    function traverse(node, depth, x, w) {
+      if (!rows[depth]) rows[depth] = [];
+      rows[depth].push({node: node, x: x, w: w, depth: depth});
+      if (depth > maxDepth) maxDepth = depth;
+      if (!node.children || node.children.length === 0) return;
+      let total = node.totalMs || 0;
+      if (total === 0) {
+        node.children.forEach(function(c) { total += (c.totalMs || 0); });
+      }
+      if (total === 0) return;
+      let cx = x;
+      node.children.forEach(function(child) {
+        const cw = w * ((child.totalMs || 0) / total);
+        if (cw > 0.5) traverse(child, depth + 1, cx, cw);
+        cx += cw;
+      });
+    }
+
+    traverse(root, 0, 0, 1.0);
+
+    const dpr = window.devicePixelRatio || 1;
+    const W = canvas.offsetWidth || 800;
+    canvas.width = W * dpr;
+    canvas.height = (maxDepth + 1) * ROW_HEIGHT * dpr;
+    canvas.style.height = ((maxDepth + 1) * ROW_HEIGHT) + 'px';
+
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+
+    let zoom = {x: 0, w: 1.0};
+
+    function draw() {
+      ctx.clearRect(0, 0, W, canvas.height / dpr);
+      rows.forEach(function(row, depth) {
+        row.forEach(function(item) {
+          const nx = (item.x - zoom.x) / zoom.w;
+          const nw = item.w / zoom.w;
+          if (nx + nw < 0 || nx > 1) return;
+          const px = nx * W;
+          const pw = nw * W;
+          if (pw < 1) return;
+          const py = depth * ROW_HEIGHT;
+          ctx.fillStyle = COLORS[depth % COLORS.length];
+          ctx.fillRect(px + 1, py + 1, pw - 2, ROW_HEIGHT - 2);
+          if (pw > 30) {
+            ctx.fillStyle = '#fff';
+            ctx.font = '11px monospace';
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(px + 2, py, pw - 4, ROW_HEIGHT);
+            ctx.clip();
+            let label = item.node.name || '(unknown)';
+            if (item.node.totalMs != null) label += ' ' + item.node.totalMs.toFixed(1) + 'ms';
+            ctx.fillText(label, px + 4, py + 14);
+            ctx.restore();
+          }
+        });
+      });
+    }
+
+    draw();
+
+    // Zoom on click
+    canvas.addEventListener('click', function(e) {
+      const rect = canvas.getBoundingClientRect();
+      const mx = (e.clientX - rect.left) / rect.width;
+      const my = e.clientY - rect.top;
+      const depth = Math.floor(my / ROW_HEIGHT);
+      let clicked = null;
+      if (rows[depth]) {
+        rows[depth].forEach(function(item) {
+          const nx = (item.x - zoom.x) / zoom.w;
+          const nw = item.w / zoom.w;
+          if (mx >= nx && mx <= nx + nw) clicked = item;
+        });
+      }
+      if (clicked) {
+        if (clicked.x === zoom.x && clicked.w === zoom.w) {
+          zoom = {x: 0, w: 1.0};
+        } else {
+          zoom = {x: clicked.x, w: clicked.w};
+        }
+        draw();
+      }
+    });
+
+    // Tooltip on mousemove
+    if (tooltip) {
+      canvas.addEventListener('mousemove', function(e) {
+        const rect = canvas.getBoundingClientRect();
+        const mx = (e.clientX - rect.left) / rect.width;
+        const my = e.clientY - rect.top;
+        const depth = Math.floor(my / ROW_HEIGHT);
+        let found = null;
+        if (rows[depth]) {
+          rows[depth].forEach(function(item) {
+            const nx = (item.x - zoom.x) / zoom.w;
+            const nw = item.w / zoom.w;
+            if (mx >= nx && mx <= nx + nw) found = item;
+          });
+        }
+        if (found) {
+          const n = found.node;
+          tooltip.style.display = 'block';
+          tooltip.style.left = (e.clientX + 12) + 'px';
+          tooltip.style.top = (e.clientY - 8) + 'px';
+          tooltip.textContent = (n.name || '(unknown)') +
+            (n.totalMs != null ? ' — total: ' + n.totalMs.toFixed(2) + 'ms' : '') +
+            (n.selfMs != null ? ', self: ' + n.selfMs.toFixed(2) + 'ms' : '');
+        } else {
+          tooltip.style.display = 'none';
+        }
+      });
+      canvas.addEventListener('mouseleave', function() { tooltip.style.display = 'none'; });
+    }
+  }
+
+  // ─── Memory Timeline Chart ──────────────────────────────────────────────────
+  function renderMemChart(canvas, timeline) {
+    const dpr = window.devicePixelRatio || 1;
+    const W = canvas.offsetWidth || 800;
+    const H = 200;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+
+    let maxVal = 0;
+    timeline.forEach(function(p) {
+      if (p.rss > maxVal) maxVal = p.rss;
+      if (p.heapTotal > maxVal) maxVal = p.heapTotal;
+    });
+    if (maxVal === 0) return;
+
+    const maxTs = timeline[timeline.length - 1].tsMs || 1;
+
+    function px(ts) { return (ts / maxTs) * (W - 40) + 20; }
+    function py(val) { return H - 20 - (val / maxVal) * (H - 30); }
+
+    // Grid
+    ctx.strokeStyle = '#2a2a2a';
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 4; i++) {
+      const y = H - 20 - (i / 4) * (H - 30);
+      ctx.beginPath(); ctx.moveTo(20, y); ctx.lineTo(W - 20, y); ctx.stroke();
+      ctx.fillStyle = '#555'; ctx.font = '10px monospace';
+      ctx.fillText(((maxVal / 1024 / 1024) * (i / 4)).toFixed(0) + 'MB', 2, y + 3);
+    }
+
+    function drawLine(key, color) {
+      ctx.beginPath(); ctx.strokeStyle = color; ctx.lineWidth = 1.5;
+      timeline.forEach(function(p, i) {
+        const x = px(p.tsMs), y = py(p[key]);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+    }
+
+    drawLine('rss', '#60a5fa');
+    drawLine('heapUsed', '#4ade80');
+    drawLine('heapTotal', '#facc15');
+  }
+
+  // Auto-activate TTI tab initially
+  document.addEventListener('DOMContentLoaded', function() {
+    activateTab('tti');
+  });
+})();
+</script>
+<div id="flame-tooltip" class="flame-tooltip"></div>
+{{end}}
 </body>
 </html>
 {{end}}
@@ -159,37 +475,38 @@ td { padding: 0.5rem 0.75rem; border-bottom: 1px solid #1e1e1e; }
 {{end}}
 
 {{define "results_inner"}}
+{{if .HasProfile}}
 <div class="card">
-  <h2>Run Results</h2>
-  {{if .BarData}}
-  <div class="bar-chart">
-    {{range .BarData}}
-    <div class="bar-wrap">
-      <div class="bar-val">{{if .Val}}{{deref .Val}}ms{{else}}&#x2014;{{end}}</div>
-      <div class="bar {{if .TimedOut}}timed-out{{end}}" style="height:{{.Height}}px" title="Run {{.Idx}}: {{if .Val}}{{deref .Val}}ms{{else}}timed out{{end}}"></div>
-      <div class="bar-label">#{{.Idx}}</div>
-    </div>
-    {{end}}
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="tti" onclick="activateTab('tti')">TTI Results</button>
+    <button class="tab-btn" data-tab="cpu" onclick="activateTab('cpu')">CPU Flame</button>
+    <button class="tab-btn" data-tab="wall" onclick="activateTab('wall')">Wall Time</button>
+    <button class="tab-btn" data-tab="memory" onclick="activateTab('memory')">Memory</button>
   </div>
-  {{end}}
-  <table style="margin-top:1rem">
-    <thead><tr><th>#</th><th>TTI</th><th>Status</th></tr></thead>
-    <tbody>
-    {{range .Job.Runs}}
-    <tr>
-      <td>{{.RunIndex}}</td>
-      <td>{{if .TTIMs}}{{deref .TTIMs}}ms{{else}}&#x2014;{{end}}</td>
-      <td>
-        {{if .Error}}<span class="badge badge-error">error: {{.Error}}</span>
-        {{else if .TimedOut}}<span class="badge badge-error">timed out</span>
-        {{else if .TTIMs}}<span class="badge badge-done">done</span>
-        {{else}}<span class="badge badge-pending">pending</span>{{end}}
-      </td>
-    </tr>
-    {{end}}
-    </tbody>
-  </table>
+
+  <div id="tab-tti" class="tab-pane active">
+    {{template "tti_content" .}}
+  </div>
+  <div id="tab-cpu" class="tab-pane">
+    <h2>CPU Flame Graph</h2>
+    <p style="font-size:0.8rem;color:#666;margin-bottom:0.5rem">Click to zoom · Click same node to reset</p>
+    <div class="flame-container" id="flame-cpu-container"></div>
+  </div>
+  <div id="tab-wall" class="tab-pane">
+    <h2>Wall Time (require() hierarchy)</h2>
+    <p style="font-size:0.8rem;color:#666;margin-bottom:0.5rem">Click to zoom · Click same node to reset</p>
+    <div class="flame-container" id="flame-wall-container"></div>
+  </div>
+  <div id="tab-memory" class="tab-pane">
+    <div id="mem-container"></div>
+  </div>
 </div>
+{{else}}
+<div class="card">
+  {{template "tti_content" .}}
+</div>
+{{end}}
+
 {{if .Job.Stats}}
 <div class="card">
   <h2>Statistics</h2>
@@ -203,4 +520,36 @@ td { padding: 0.5rem 0.75rem; border-bottom: 1px solid #1e1e1e; }
   </div>
 </div>
 {{end}}
+{{end}}
+
+{{define "tti_content"}}
+<h2>Run Results</h2>
+{{if .BarData}}
+<div class="bar-chart">
+  {{range .BarData}}
+  <div class="bar-wrap">
+    <div class="bar-val">{{if .Val}}{{deref .Val}}ms{{else}}&#x2014;{{end}}</div>
+    <div class="bar {{if .TimedOut}}timed-out{{end}}" style="height:{{.Height}}px" title="Run {{.Idx}}: {{if .Val}}{{deref .Val}}ms{{else}}timed out{{end}}"></div>
+    <div class="bar-label">#{{.Idx}}</div>
+  </div>
+  {{end}}
+</div>
+{{end}}
+<table style="margin-top:1rem">
+  <thead><tr><th>#</th><th>TTI</th><th>Status</th></tr></thead>
+  <tbody>
+  {{range .Job.Runs}}
+  <tr>
+    <td>{{.RunIndex}}</td>
+    <td>{{if .TTIMs}}{{deref .TTIMs}}ms{{else}}&#x2014;{{end}}</td>
+    <td>
+      {{if .Error}}<span class="badge badge-error">error: {{.Error}}</span>
+      {{else if .TimedOut}}<span class="badge badge-error">timed out</span>
+      {{else if .TTIMs}}<span class="badge badge-done">done</span>
+      {{else}}<span class="badge badge-pending">pending</span>{{end}}
+    </td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
 {{end}}
