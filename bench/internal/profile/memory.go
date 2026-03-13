@@ -14,7 +14,8 @@ type MemSnapshot struct {
 	HeapUsed  int64   `json:"heapUsed"`
 	HeapTotal int64   `json:"heapTotal"`
 	External  int64   `json:"external"`
-	Timestamp float64 `json:"timestamp"`
+	// timestamp_ms matches the key written by _memory_hook.cjs (performance.now(), ms)
+	Timestamp float64 `json:"timestamp_ms"`
 }
 
 type TimePoint struct {
@@ -63,11 +64,11 @@ func FindMemTrace(dir string) (string, error) {
 func buildMemoryData(snapshots []MemSnapshot) *MemoryData {
 	result := &MemoryData{}
 
-	// Build timeline from all snapshots
+	// Build timeline; timestamps from performance.now() are already in milliseconds.
 	startTs := snapshots[0].Timestamp
 	for _, s := range snapshots {
 		result.Timeline = append(result.Timeline, TimePoint{
-			TsMs:      (s.Timestamp - startTs) / 1e6, // ns -> ms (if nanoseconds)
+			TsMs:      s.Timestamp - startTs,
 			RSS:       s.RSS,
 			HeapUsed:  s.HeapUsed,
 			HeapTotal: s.HeapTotal,
@@ -75,8 +76,7 @@ func buildMemoryData(snapshots []MemSnapshot) *MemoryData {
 		})
 	}
 
-	// Build per-module heap attribution: delta heapUsed between consecutive snapshots
-	// grouped by module name
+	// Per-module heap attribution: sum positive deltas grouped by module name.
 	modDelta := make(map[string]int64)
 	for i := 1; i < len(snapshots); i++ {
 		prev, cur := snapshots[i-1], snapshots[i]

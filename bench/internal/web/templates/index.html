@@ -185,12 +185,12 @@ canvas.mem-canvas { display: block; width: 100%; border-radius: 4px; }
   {{template "results_inner" .}}
 </div>
 
-{{if .HasProfile}}
+{{if .Job.Config.UseProfileScript}}
 <script>
 (function() {
   // Lazy-load profile data and render flame graphs only when tab is activated
-  var profileLoaded = {};
-  var jobID = "{{.JobID}}";
+  const profileLoaded = {};
+  const jobID = "{{.JobID}}";
 
   function activateTab(tabName) {
     document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.toggle('active', b.dataset.tab === tabName); });
@@ -211,7 +211,7 @@ canvas.mem-canvas { display: block; width: 100%; border-radius: 4px; }
 
   // Flame graph renderer
   function loadFlameGraph(name, url, canvasId) {
-    var el = document.getElementById(canvasId + '-container');
+    const el = document.getElementById(canvasId + '-container');
     if (!el) return;
     el.innerHTML = '<div class="flame-loading">Loading...</div>';
     fetch(url).then(function(r) {
@@ -220,10 +220,10 @@ canvas.mem-canvas { display: block; width: 100%; border-radius: 4px; }
     }).then(function(tree) {
       if (!tree) return;
       el.innerHTML = '';
-      var canvas = document.createElement('canvas');
+      const canvas = document.createElement('canvas');
       canvas.className = 'flame-canvas';
       el.appendChild(canvas);
-      var tip = document.getElementById('flame-tooltip');
+      const tip = document.getElementById('flame-tooltip');
       renderFlameGraph(canvas, tree, tip);
     }).catch(function(e) {
       el.innerHTML = '<div class="flame-loading" style="color:#f87171">Error: ' + e.message + '</div>';
@@ -231,7 +231,7 @@ canvas.mem-canvas { display: block; width: 100%; border-radius: 4px; }
   }
 
   function loadMemory(url) {
-    var el = document.getElementById('mem-container');
+    const el = document.getElementById('mem-container');
     if (!el) return;
     el.innerHTML = '<div class="flame-loading">Loading...</div>';
     fetch(url).then(function(r) {
@@ -241,11 +241,11 @@ canvas.mem-canvas { display: block; width: 100%; border-radius: 4px; }
       if (!data) return;
       el.innerHTML = '';
       if (data.timeline && data.timeline.length > 0) {
-        var canvas = document.createElement('canvas');
+        const canvas = document.createElement('canvas');
         canvas.className = 'mem-canvas';
         canvas.height = 200;
         el.appendChild(canvas);
-        var legend = document.createElement('div');
+        const legend = document.createElement('div');
         legend.className = 'mem-legend';
         legend.innerHTML = '<div class="mem-legend-item"><div class="mem-legend-dot" style="background:#60a5fa"></div>RSS</div>' +
           '<div class="mem-legend-item"><div class="mem-legend-dot" style="background:#4ade80"></div>Heap Used</div>' +
@@ -254,15 +254,15 @@ canvas.mem-canvas { display: block; width: 100%; border-radius: 4px; }
         renderMemChart(canvas, data.timeline);
       }
       if (data.attribution && data.attribution.length > 0) {
-        var h = document.createElement('h2');
+        const h = document.createElement('h2');
         h.style.marginTop = '1.5rem';
         h.textContent = 'Module Memory Attribution';
         el.appendChild(h);
-        var tbl = document.createElement('table');
+        const tbl = document.createElement('table');
         tbl.innerHTML = '<thead><tr><th>Module</th><th>Delta KB</th></tr></thead>';
-        var tbody = document.createElement('tbody');
+        const tbody = document.createElement('tbody');
         data.attribution.slice(0, 30).forEach(function(m) {
-          var tr = document.createElement('tr');
+          const tr = document.createElement('tr');
           tr.innerHTML = '<td style="font-family:monospace">' + escHtml(m.module) + '</td><td>' + m.deltaKB + ' KB</td>';
           tbody.appendChild(tr);
         });
@@ -279,27 +279,27 @@ canvas.mem-canvas { display: block; width: 100%; border-radius: 4px; }
   }
 
   // ─── Flame Graph Canvas Renderer ───────────────────────────────────────────
-  var COLORS = ['#2563eb','#1d4ed8','#1e40af','#1e3a8a','#3b82f6','#60a5fa','#93c5fd'];
-  var ROW_HEIGHT = 20;
+  const COLORS = ['#2563eb','#1d4ed8','#1e40af','#1e3a8a','#3b82f6','#60a5fa','#93c5fd'];
+  const ROW_HEIGHT = 20;
 
   function renderFlameGraph(canvas, root, tooltip) {
     // Flatten tree into rows
-    var rows = [];
-    var maxDepth = 0;
+    const rows = [];
+    let maxDepth = 0;
 
     function traverse(node, depth, x, w) {
       if (!rows[depth]) rows[depth] = [];
       rows[depth].push({node: node, x: x, w: w, depth: depth});
       if (depth > maxDepth) maxDepth = depth;
       if (!node.children || node.children.length === 0) return;
-      var total = node.totalMs || 0;
+      let total = node.totalMs || 0;
       if (total === 0) {
         node.children.forEach(function(c) { total += (c.totalMs || 0); });
       }
       if (total === 0) return;
-      var cx = x;
+      let cx = x;
       node.children.forEach(function(child) {
-        var cw = w * ((child.totalMs || 0) / total);
+        const cw = w * ((child.totalMs || 0) / total);
         if (cw > 0.5) traverse(child, depth + 1, cx, cw);
         cx += cw;
       });
@@ -307,28 +307,28 @@ canvas.mem-canvas { display: block; width: 100%; border-radius: 4px; }
 
     traverse(root, 0, 0, 1.0);
 
-    var dpr = window.devicePixelRatio || 1;
-    var W = canvas.offsetWidth || 800;
+    const dpr = window.devicePixelRatio || 1;
+    const W = canvas.offsetWidth || 800;
     canvas.width = W * dpr;
     canvas.height = (maxDepth + 1) * ROW_HEIGHT * dpr;
     canvas.style.height = ((maxDepth + 1) * ROW_HEIGHT) + 'px';
 
-    var ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d');
     ctx.scale(dpr, dpr);
 
-    var zoom = {x: 0, w: 1.0};
+    let zoom = {x: 0, w: 1.0};
 
     function draw() {
       ctx.clearRect(0, 0, W, canvas.height / dpr);
       rows.forEach(function(row, depth) {
         row.forEach(function(item) {
-          var nx = (item.x - zoom.x) / zoom.w;
-          var nw = item.w / zoom.w;
+          const nx = (item.x - zoom.x) / zoom.w;
+          const nw = item.w / zoom.w;
           if (nx + nw < 0 || nx > 1) return;
-          var px = nx * W;
-          var pw = nw * W;
+          const px = nx * W;
+          const pw = nw * W;
           if (pw < 1) return;
-          var py = depth * ROW_HEIGHT;
+          const py = depth * ROW_HEIGHT;
           ctx.fillStyle = COLORS[depth % COLORS.length];
           ctx.fillRect(px + 1, py + 1, pw - 2, ROW_HEIGHT - 2);
           if (pw > 30) {
@@ -338,7 +338,7 @@ canvas.mem-canvas { display: block; width: 100%; border-radius: 4px; }
             ctx.beginPath();
             ctx.rect(px + 2, py, pw - 4, ROW_HEIGHT);
             ctx.clip();
-            var label = item.node.name || '(unknown)';
+            let label = item.node.name || '(unknown)';
             if (item.node.totalMs != null) label += ' ' + item.node.totalMs.toFixed(1) + 'ms';
             ctx.fillText(label, px + 4, py + 14);
             ctx.restore();
@@ -351,15 +351,15 @@ canvas.mem-canvas { display: block; width: 100%; border-radius: 4px; }
 
     // Zoom on click
     canvas.addEventListener('click', function(e) {
-      var rect = canvas.getBoundingClientRect();
-      var mx = (e.clientX - rect.left) / rect.width;
-      var my = e.clientY - rect.top;
-      var depth = Math.floor(my / ROW_HEIGHT);
-      var clicked = null;
+      const rect = canvas.getBoundingClientRect();
+      const mx = (e.clientX - rect.left) / rect.width;
+      const my = e.clientY - rect.top;
+      const depth = Math.floor(my / ROW_HEIGHT);
+      let clicked = null;
       if (rows[depth]) {
         rows[depth].forEach(function(item) {
-          var nx = (item.x - zoom.x) / zoom.w;
-          var nw = item.w / zoom.w;
+          const nx = (item.x - zoom.x) / zoom.w;
+          const nw = item.w / zoom.w;
           if (mx >= nx && mx <= nx + nw) clicked = item;
         });
       }
@@ -376,20 +376,20 @@ canvas.mem-canvas { display: block; width: 100%; border-radius: 4px; }
     // Tooltip on mousemove
     if (tooltip) {
       canvas.addEventListener('mousemove', function(e) {
-        var rect = canvas.getBoundingClientRect();
-        var mx = (e.clientX - rect.left) / rect.width;
-        var my = e.clientY - rect.top;
-        var depth = Math.floor(my / ROW_HEIGHT);
-        var found = null;
+        const rect = canvas.getBoundingClientRect();
+        const mx = (e.clientX - rect.left) / rect.width;
+        const my = e.clientY - rect.top;
+        const depth = Math.floor(my / ROW_HEIGHT);
+        let found = null;
         if (rows[depth]) {
           rows[depth].forEach(function(item) {
-            var nx = (item.x - zoom.x) / zoom.w;
-            var nw = item.w / zoom.w;
+            const nx = (item.x - zoom.x) / zoom.w;
+            const nw = item.w / zoom.w;
             if (mx >= nx && mx <= nx + nw) found = item;
           });
         }
         if (found) {
-          var n = found.node;
+          const n = found.node;
           tooltip.style.display = 'block';
           tooltip.style.left = (e.clientX + 12) + 'px';
           tooltip.style.top = (e.clientY - 8) + 'px';
@@ -406,22 +406,22 @@ canvas.mem-canvas { display: block; width: 100%; border-radius: 4px; }
 
   // ─── Memory Timeline Chart ──────────────────────────────────────────────────
   function renderMemChart(canvas, timeline) {
-    var dpr = window.devicePixelRatio || 1;
-    var W = canvas.offsetWidth || 800;
-    var H = 200;
+    const dpr = window.devicePixelRatio || 1;
+    const W = canvas.offsetWidth || 800;
+    const H = 200;
     canvas.width = W * dpr;
     canvas.height = H * dpr;
-    var ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d');
     ctx.scale(dpr, dpr);
 
-    var maxVal = 0;
+    let maxVal = 0;
     timeline.forEach(function(p) {
       if (p.rss > maxVal) maxVal = p.rss;
       if (p.heapTotal > maxVal) maxVal = p.heapTotal;
     });
     if (maxVal === 0) return;
 
-    var maxTs = timeline[timeline.length - 1].tsMs || 1;
+    const maxTs = timeline[timeline.length - 1].tsMs || 1;
 
     function px(ts) { return (ts / maxTs) * (W - 40) + 20; }
     function py(val) { return H - 20 - (val / maxVal) * (H - 30); }
@@ -429,8 +429,8 @@ canvas.mem-canvas { display: block; width: 100%; border-radius: 4px; }
     // Grid
     ctx.strokeStyle = '#2a2a2a';
     ctx.lineWidth = 1;
-    for (var i = 0; i <= 4; i++) {
-      var y = H - 20 - (i / 4) * (H - 30);
+    for (let i = 0; i <= 4; i++) {
+      const y = H - 20 - (i / 4) * (H - 30);
       ctx.beginPath(); ctx.moveTo(20, y); ctx.lineTo(W - 20, y); ctx.stroke();
       ctx.fillStyle = '#555'; ctx.font = '10px monospace';
       ctx.fillText(((maxVal / 1024 / 1024) * (i / 4)).toFixed(0) + 'MB', 2, y + 3);
@@ -439,7 +439,7 @@ canvas.mem-canvas { display: block; width: 100%; border-radius: 4px; }
     function drawLine(key, color) {
       ctx.beginPath(); ctx.strokeStyle = color; ctx.lineWidth = 1.5;
       timeline.forEach(function(p, i) {
-        var x = px(p.tsMs), y = py(p[key]);
+        const x = px(p.tsMs), y = py(p[key]);
         if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
       });
       ctx.stroke();

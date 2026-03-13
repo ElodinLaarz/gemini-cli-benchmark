@@ -59,7 +59,6 @@ func FindCPUProfile(dir string) (string, error) {
 }
 
 func buildCPUTree(p *v8Profile) *FlameNode {
-	// Build id->node map and parent map
 	type nodeInfo struct {
 		name     string
 		url      string
@@ -78,7 +77,7 @@ func buildCPUTree(p *v8Profile) *FlameNode {
 		}
 	}
 
-	// Build parent map
+	// Build parent map from children edges
 	parent := make(map[int]int, len(p.Nodes))
 	for _, n := range p.Nodes {
 		for _, child := range n.Children {
@@ -105,21 +104,16 @@ func buildCPUTree(p *v8Profile) *FlameNode {
 		selfTime[sampleID] += dt
 	}
 
-	// Accumulate total time: for each sample, walk up the call stack
+	// Accumulate total time by walking up from each sample to the root.
+	// V8 profiles form a tree (no cycles), so no visited map is needed.
 	totalTime := make(map[int]float64, len(p.Nodes))
 	for i, sampleID := range p.Samples {
 		var dt float64
 		if i < len(p.TimeDeltas) {
 			dt = float64(p.TimeDeltas[i]) / 1000.0
 		}
-		// Walk up from leaf to root, adding time to each ancestor
-		visited := make(map[int]bool)
 		cur := sampleID
 		for cur != 0 {
-			if visited[cur] {
-				break
-			}
-			visited[cur] = true
 			totalTime[cur] += dt
 			cur = parent[cur]
 		}
@@ -134,7 +128,6 @@ func buildCPUTree(p *v8Profile) *FlameNode {
 		}
 		label := n.name
 		if n.url != "" && !strings.HasPrefix(n.url, "node:") {
-			// Show just the filename part of the URL
 			parts := strings.Split(n.url, "/")
 			label = fmt.Sprintf("%s (%s)", n.name, parts[len(parts)-1])
 		}

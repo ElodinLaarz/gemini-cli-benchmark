@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -220,6 +222,12 @@ func (h *Handler) sseEvents(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "streaming not supported", http.StatusInternalServerError)
 		return
 	}
+	// Check job exists before subscribing to avoid a perpetually open connection.
+	if _, ok := h.store.Get(id); !ok {
+		http.NotFound(w, r)
+		return
+	}
+
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -260,7 +268,12 @@ func (h *Handler) sseEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) sendSSEUpdate(w http.ResponseWriter, job *benchmark.BenchmarkResult) {
-	data, _ := json.Marshal(job)
+	data, err := json.Marshal(job)
+	if err != nil {
+		log.Printf("sse: marshal job %s: %v", job.ID, err)
+		fmt.Fprintf(w, "event: error\ndata: marshal failed\n\n")
+		return
+	}
 	fmt.Fprintf(w, "event: update\ndata: %s\n\n", data)
 }
 
@@ -355,12 +368,22 @@ func (h *Handler) profileMemory(w http.ResponseWriter, r *http.Request) {
 }
 
 // firstProfileDir returns the ProfileDir of the first completed run that has one.
+// It validates that the directory is under the job's DataDir to prevent path traversal.
 func firstProfileDir(job *benchmark.BenchmarkResult) string {
+	if job.DataDir == "" {
+		return ""
+	}
+	safeRoot := filepath.Clean(job.DataDir)
 	for _, run := range job.Runs {
-		if run.ProfileDir != "" {
-			if _, err := os.Stat(run.ProfileDir); err == nil {
-				return run.ProfileDir
-			}
+		if run.ProfileDir == "" {
+			continue
+		}
+		clean := filepath.Clean(run.ProfileDir)
+		if !strings.HasPrefix(clean, safeRoot+string(filepath.Separator)) {
+			continue
+		}
+		if _, err := os.Stat(clean); err == nil {
+			return clean
 		}
 	}
 	return ""

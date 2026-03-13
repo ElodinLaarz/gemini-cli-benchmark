@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 )
 
 type traceEvent struct {
@@ -86,17 +87,13 @@ func buildWallTree(events []traceEvent) *FlameNode {
 		return root
 	}
 
-	// Sort by start time ascending, then by duration descending (parents first)
-	for i := 1; i < len(spans); i++ {
-		for j := i; j > 0; j-- {
-			a, b := spans[j-1], spans[j]
-			if b.ts < a.ts || (b.ts == a.ts && b.dur > a.dur) {
-				spans[j-1], spans[j] = spans[j], spans[j-1]
-			} else {
-				break
-			}
+	// Sort by start time ascending, then by duration descending (parents before children).
+	sort.Slice(spans, func(i, j int) bool {
+		if spans[i].ts != spans[j].ts {
+			return spans[i].ts < spans[j].ts
 		}
-	}
+		return spans[i].dur > spans[j].dur
+	})
 
 	type stackEntry struct {
 		node  *FlameNode

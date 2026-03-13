@@ -3,6 +3,7 @@ package benchmark
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -112,23 +113,35 @@ func (s *Store) persist(r *BenchmarkResult) {
 	d := toDisk(r)
 	data, err := json.MarshalIndent(d, "", "  ")
 	if err != nil {
+		log.Printf("store: marshal job %s: %v", r.ID, err)
 		return
 	}
 	dir := s.jobDataDir(r.ID)
-	_ = os.MkdirAll(dir, 0755)
-	_ = os.WriteFile(filepath.Join(dir, "results.json"), data, 0644)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		log.Printf("store: mkdir %s: %v", dir, err)
+		return
+	}
+	if err := os.WriteFile(filepath.Join(dir, "results.json"), data, 0644); err != nil {
+		log.Printf("store: write results for job %s: %v", r.ID, err)
+	}
 }
 
 func (s *Store) loadFromDisk() {
 	pattern := filepath.Join(s.dataDir, "jobs", "*", "results.json")
-	matches, _ := filepath.Glob(pattern)
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		log.Printf("store: glob pattern %s: %v", pattern, err)
+		return
+	}
 	for _, path := range matches {
 		data, err := os.ReadFile(path)
 		if err != nil {
+			log.Printf("store: read %s: %v", path, err)
 			continue
 		}
 		var d diskResult
 		if err := json.Unmarshal(data, &d); err != nil {
+			log.Printf("store: unmarshal %s: %v", path, err)
 			continue
 		}
 		r := toMem(d)
@@ -205,13 +218,13 @@ func (s *Store) Get(id string) (*BenchmarkResult, bool) {
 	if !ok {
 		return nil, false
 	}
-	copy := *r
+	cp := *r
 	runs := make([]RunResult, len(r.Runs))
 	for i, rr := range r.Runs {
 		runs[i] = rr
 	}
-	copy.Runs = runs
-	return &copy, true
+	cp.Runs = runs
+	return &cp, true
 }
 
 func (s *Store) List() []*BenchmarkResult {
@@ -220,6 +233,12 @@ func (s *Store) List() []*BenchmarkResult {
 	out := make([]*BenchmarkResult, 0, len(s.jobs))
 	for _, r := range s.jobs {
 		cp := *r
+		// Deep-copy Runs to prevent data races with concurrent UpdateRun calls.
+		runs := make([]RunResult, len(r.Runs))
+		for i, rr := range r.Runs {
+			runs[i] = rr
+		}
+		cp.Runs = runs
 		out = append(out, &cp)
 	}
 	return out
@@ -251,6 +270,7 @@ func (s *Store) SetSystemInfo(id string, info *SystemInfo) {
 	if r, ok := s.jobs[id]; ok {
 		r.SystemInfo = info
 		s.persist(r)
+		s.notify(id)
 	}
 }
 
@@ -276,7 +296,16 @@ func (s *Store) Finish(id string, stats *Statistics, jobErr string) {
 func (s *Store) Delete(id string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_, ok := s.jobs[id]
+	r, ok := s.jobs[id]
+	if !ok {
+		return false
+	}
 	delete(s.jobs, id)
-	return ok
+	// Remove persisted data so the job doesn't reload on restart.
+	if r.DataDir != "" {
+		if err := os.RemoveAll(r.DataDir); err != nil {
+			log.Printf("store: remove data dir %s: %v", r.DataDir, err)
+		}
+	}
+	return true
 }

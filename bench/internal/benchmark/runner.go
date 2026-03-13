@@ -18,6 +18,10 @@ import (
 	"github.com/creack/pty"
 )
 
+// scriptGracePeriod is extra time added to the overall timeout when invoking
+// run-profile.sh, to account for report-generation and cleanup overhead.
+const scriptGracePeriod = 60 * time.Second
+
 type Runner struct {
 	store *Store
 }
@@ -57,9 +61,7 @@ func (r *Runner) RunAll(id string) {
 		r.store.UpdateRun(id, result)
 	}
 
-	job2, _ := r.store.Get(id)
-	stats := computeStats(job2.Runs)
-	r.store.Finish(id, stats, "")
+	r.finishJob(id)
 }
 
 // runAllWithScript invokes run-profile.sh and reads tti_ms files from its output.
@@ -67,6 +69,13 @@ func (r *Runner) runAllWithScript(id string, job *BenchmarkResult) {
 	scriptPath := job.Config.ProfileScriptPath
 	if scriptPath == "" {
 		scriptPath = "run-profile.sh"
+	}
+
+	// Resolve to absolute path so cmd.Dir and the script argument are consistent.
+	absScript, err := filepath.Abs(scriptPath)
+	if err != nil {
+		r.store.Finish(id, nil, fmt.Sprintf("resolve script path: %v", err))
+		return
 	}
 
 	profilesDir := filepath.Join(job.DataDir, "profiles")
@@ -81,7 +90,7 @@ func (r *Runner) runAllWithScript(id string, job *BenchmarkResult) {
 	}
 
 	args := []string{
-		scriptPath,
+		absScript,
 		"--runs", strconv.Itoa(job.Config.Runs),
 		"--timeout", strconv.Itoa(timeoutSec),
 		"--output-dir", profilesDir,
@@ -91,12 +100,12 @@ func (r *Runner) runAllWithScript(id string, job *BenchmarkResult) {
 		args = append(args, "--gemini-path", job.Config.Binary)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(),
-		time.Duration(timeoutSec*job.Config.Runs+60)*time.Second)
+	totalTimeout := time.Duration(timeoutSec*job.Config.Runs)*time.Second + scriptGracePeriod
+	ctx, cancel := context.WithTimeout(context.Background(), totalTimeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "bash", args...)
-	cmd.Dir = filepath.Dir(scriptPath)
+	cmd.Dir = filepath.Dir(absScript)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		r.store.Finish(id, nil, fmt.Sprintf("script failed: %v\n%s", err, out))
@@ -123,8 +132,16 @@ func (r *Runner) runAllWithScript(id string, job *BenchmarkResult) {
 		r.store.UpdateRun(id, run)
 	}
 
-	job2, _ := r.store.Get(id)
-	stats := computeStats(job2.Runs)
+	r.finishJob(id)
+}
+
+// finishJob reads current run state, computes stats, and marks the job done.
+func (r *Runner) finishJob(id string) {
+	job, _ := r.store.Get(id)
+	if job == nil {
+		return
+	}
+	stats := computeStats(job.Runs)
 	r.store.Finish(id, stats, "")
 }
 
@@ -227,7 +244,7 @@ func captureSystemInfo() *SystemInfo {
 		info.KernelVersion = strings.TrimSpace(string(out))
 	}
 
-	// CPU info from /proc/cpuinfo
+	// CPU info from /proc/cpuinfo (Linux only; silently skipped on other platforms)
 	if data, err := os.ReadFile("/proc/cpuinfo"); err == nil {
 		lines := strings.Split(string(data), "\n")
 		for _, line := range lines {
@@ -243,14 +260,15 @@ func captureSystemInfo() *SystemInfo {
 		}
 	}
 
-	// RAM from /proc/meminfo
+	// RAM from /proc/meminfo (Linux only; silently skipped on other platforms)
 	if data, err := os.ReadFile("/proc/meminfo"); err == nil {
 		for _, line := range strings.Split(string(data), "\n") {
 			if strings.HasPrefix(line, "MemTotal:") {
 				fields := strings.Fields(line)
 				if len(fields) >= 2 {
-					kb, _ := strconv.ParseInt(fields[1], 10, 64)
-					info.TotalRAMMB = kb / 1024
+					if kb, err := strconv.ParseInt(fields[1], 10, 64); err == nil {
+						info.TotalRAMMB = kb / 1024
+					}
 				}
 				break
 			}
